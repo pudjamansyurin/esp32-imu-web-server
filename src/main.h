@@ -1,11 +1,15 @@
 #ifndef MAIN_H_
 #define MAIN_H_
 
+#define CONFIG_DISABLE_HAL_LOCKS 1 
+
 #include <Adafruit_Sensor.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* exported macros ------------------------------------------------------------*/
 
 /* exported typedefs ---------------------------------------------------------*/
 typedef struct

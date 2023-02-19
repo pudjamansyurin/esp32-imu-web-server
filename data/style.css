@@ -59,7 +59,7 @@ body {
   font-size: 14px; width: 150px;
   border-radius: 4px;
 }
-#reset-yaw, #reset-roll, #reset-pitch{
+#reset-y, #reset-r, #reset-p{
     border: none;
     color: #FEFCFB;
     background-color: #003366;

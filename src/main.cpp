@@ -14,31 +14,30 @@
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <Adafruit_MPU6050.h>
 #include <Adafruit_SSD1306.h>
 #include <Arduino_JSON.h>
 #include "SPIFFS.h"
 
-/* private macros ------------------------------------------------------------*/
-#define RESULTANT(X,Y)  (sqrt((X)*(X) + (Y)*(Y)))
+#include <MPU6050_6Axis_MotionApps612.h>
 
+/* private macros ------------------------------------------------------------*/
 #define LED_PIN         2U
-#define CALIB_CNT       500U
-#define MEASURE_MS      1U
+#define INT_PIN         23U
+#define CALIB_CNT       6U
 #define REPORT_MS       250U
-#define TAU             0.98f
-#define YAW_THRES       0.03f
 
 /* private variables ---------------------------------------------------------*/
 Adafruit_SSD1306 oled(128, 32, &Wire);
 AsyncWebServer server(SVR_PORT);
 AsyncEventSource event(SVR_EVT);
-Adafruit_MPU6050 mpu;
 
+MPU6050 mpu;
 sensors_vec_t tilt;
 sImu_t imu;
 
-uint64_t u64_lastMeasure;
+// MPU control/status vars
+uint8_t fifoBuffer[64]; // FIFO storage buffer
+
 uint64_t u64_lastReport;
 
 /* private functions delcarations --------------------------------------------*/
@@ -48,17 +47,23 @@ void initOLED();
 void initMPU();
 void initSPIFFS();
 void initWiFi();
-
-void measure(sImu_t* p_imu);
-void calibrate(sImu_t* p_imu, uint32_t u32_sample);
-void calcTilt(sensors_vec_t* p_tilt, const sImu_t* p_imu, float f_dt);
-String convJSON(const sensors_vec_t* p_tilt, const sImu_t* p_imu);
+String json(const sensors_vec_t* p_tilt, const sImu_t* p_imu);
 void report(const sensors_vec_t* p_tilt, const sImu_t* p_imu);
+
+/* ISR functions -------------------------------------------------------------*/
+void dmpDataReady() 
+{
+    // not used, already polling
+}
 
 /* public functions ----------------------------------------------------------*/
 void setup() 
 {
     pinMode(LED_PIN, OUTPUT);
+    pinMode(INT_PIN, INPUT);
+
+    Wire.begin(); 
+    Wire.setClock(400000);
     Serial.begin(115200);
 
     initSPIFFS();
@@ -83,15 +88,15 @@ void setup()
         memset(&tilt, 0x0, sizeof(sensors_vec_t));
         request->send(200, "text/plain", "OK");
     });
-    server.on("/reset-yaw", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/reset-y", HTTP_GET, [](AsyncWebServerRequest *request) {
         tilt.heading = 0;
         request->send(200, "text/plain", "OK");
     });
-    server.on("/reset-roll", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/reset-r", HTTP_GET, [](AsyncWebServerRequest *request) {
         tilt.roll = 0;
         request->send(200, "text/plain", "OK");
     });
-    server.on("/reset-pitch", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/reset-p", HTTP_GET, [](AsyncWebServerRequest *request) {
         tilt.pitch = 0;
         request->send(200, "text/plain", "OK");
     });
@@ -105,13 +110,29 @@ void loop()
 {
     uint32_t u32_ms;
 
-    // measure from sensor
-    u32_ms = millis() - u64_lastMeasure;
-    if (MEASURE_MS < u32_ms)
-    {
-        u64_lastMeasure = millis();
-        measure(&imu);
-        calcTilt(&tilt, &imu, (u32_ms * 0.001));
+    // read a packet from FIFO
+    if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) 
+    { 
+        // orientation/motion vars
+        Quaternion q;           // quaternion container
+        VectorFloat gravity;    // gravity vector
+        float ypr[3];           // yaw/pitch/roll container and gravity vector
+
+        mpu.dmpGetQuaternion(&q, fifoBuffer);
+        mpu.dmpGetGravity(&gravity, &q);
+        mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+
+        VectorInt16 aa;         // accel sensor measurements
+        VectorInt16 aaReal;     // gravity-free accel sensor measurements
+        VectorInt16 aaWorld;    // world-frame accel sensor measurements
+        mpu.dmpGetAccel(&aa, fifoBuffer);
+        mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
+        mpu.dmpGetLinearAccelInWorld(&aaWorld, &aaReal, &q);
+
+        memset(&imu, 0x0, sizeof(sImu_t));
+        tilt.heading = ypr[0];
+        tilt.pitch   = -ypr[1];
+        tilt.roll    = ypr[2];
     }
 
     // report to client
@@ -160,13 +181,22 @@ void initOLED()
 
 void initMPU()
 {
-    if (!mpu.begin()) 
+    if (!mpu.testConnection()) 
     {
         errorHandler("IMU (MPU6050) not found!");
     }
 
-    log("Calibrating...");
-    calibrate(&imu, CALIB_CNT);
+    mpu.initialize();
+    if (0 !=  mpu.dmpInitialize())
+    {
+        errorHandler("DMP initialization fail!");
+    }
+
+    // turn on the DMP, now that it's ready
+    mpu.setDMPEnabled(true);
+
+    // enable Arduino interrupt detection
+    attachInterrupt(INT_PIN, dmpDataReady, RISING);
 }
 
 void initSPIFFS() 
@@ -192,39 +222,7 @@ void initWiFi()
     log("Connected");
 }
 
-void calcTilt(sensors_vec_t* p_tilt, const sImu_t* p_imu, float f_dt)
-{
-    const sensors_vec_t* p_accl;
-    const sensors_vec_t* p_gyro;
-    sensors_vec_t tiltAccl;
-    sensors_vec_t tiltGyro;
-
-    p_accl = &(p_imu->accl.acceleration);
-    p_gyro = &(p_imu->gyro.gyro);
-
-    // get tilt from accelerometer
-    tiltAccl.roll    = atan2(p_accl->y,  RESULTANT(p_accl->x, p_accl->z));
-    tiltAccl.pitch   = atan2(-p_accl->x, RESULTANT(p_accl->y, p_accl->z));
-    // tiltAccl.heading = atan2(p_accl->z,  RESULTANT(p_accl->y, p_accl->x));
-
-    // get tilt from gyroscope
-    tiltGyro.roll    = p_tilt->roll    + p_gyro->x * f_dt;
-    tiltGyro.pitch   = p_tilt->pitch   + p_gyro->y * f_dt;
-    // tiltGyro.heading = p_tilt->heading + p_gyro->z * f_dt;
-
-    // sensor fusion using complementary filter
-    p_tilt->roll     = (TAU)*(tiltGyro.roll)    + (1-TAU)*(tiltAccl.roll);
-    p_tilt->pitch    = (TAU)*(tiltGyro.pitch)   + (1-TAU)*(tiltAccl.pitch);
-    // p_tilt->heading  = (TAU)*(tiltGyro.heading) + (1-TAU)*(tiltAccl.heading);
-
-    // heading (yaw) only from gyroscope
-    if (YAW_THRES < abs(p_gyro->z))
-    {
-        p_tilt->heading += p_gyro->z * f_dt;
-    }
-}
-
-String convJSON(const sensors_vec_t* p_tilt, const sImu_t* p_imu)
+String json(const sensors_vec_t* p_tilt, const sImu_t* p_imu)
 {
     const sensors_vec_t* p_accl;
     const sensors_vec_t* p_gyro;
@@ -233,80 +231,30 @@ String convJSON(const sensors_vec_t* p_tilt, const sImu_t* p_imu)
     p_accl = &(p_imu->accl.acceleration);
     p_gyro = &(p_imu->gyro.gyro);
 
-    data["temp"]      = String(p_imu->temp.temperature);
-    data["gyroX"]     = String(p_gyro->x);
-    data["gyroY"]     = String(p_gyro->y);
-    data["gyroZ"]     = String(p_gyro->z);
-    data["acclX"]     = String(p_accl->x);
-    data["acclY"]     = String(p_accl->y);
-    data["acclZ"]     = String(p_accl->z);
-    data["tiltYaw"]   = String(p_tilt->heading);
-    data["tiltRoll"]  = String(p_tilt->roll);
-    data["tiltPitch"] = String(p_tilt->pitch);
+    data["temp"]  = String(p_imu->temp.temperature);
+    data["gyroX"] = String(p_gyro->x);
+    data["gyroY"] = String(p_gyro->y);
+    data["gyroZ"] = String(p_gyro->z);
+    data["acclX"] = String(p_accl->x);
+    data["acclY"] = String(p_accl->y);
+    data["acclZ"] = String(p_accl->z);
+    data["tiltY"] = String(p_tilt->heading);
+    data["tiltR"] = String(p_tilt->roll);
+    data["tiltP"] = String(p_tilt->pitch);
+#if 0
+    data["quatW"] = String(q.w);
+    data["quatX"] = String(q.x);
+    data["quatY"] = String(q.y);
+    data["quatZ"] = String(q.z);
+#endif
 
     return JSON.stringify(data);
-}
-
-void calibrate(sImu_t* p_imu, uint32_t u32_sample)
-{
-    sSum_t* p_biasAccl;
-    sSum_t* p_biasGyro;
-    sImu_t tmpImu;
-    sSum_t sumAccl;
-    sSum_t sumGyro;
-
-    p_biasAccl = &(p_imu->biasAccl);
-    p_biasGyro = &(p_imu->biasGyro);
-
-    // reset to zero
-    memset(&sumAccl, 0x0, sizeof(sSum_t));
-    memset(&sumGyro, 0x0, sizeof(sSum_t));
-
-    // get a lot of sample
-    for(uint32_t u32_i = 0; u32_i < u32_sample; u32_i++) 
-    {
-        mpu.getEvent(&(tmpImu.accl), &(tmpImu.gyro), &(tmpImu.temp));
-
-        sumAccl.d_x += tmpImu.accl.acceleration.x;
-        sumAccl.d_y += tmpImu.accl.acceleration.y;
-        sumAccl.d_z += tmpImu.accl.acceleration.z;
-        sumGyro.d_x += tmpImu.gyro.gyro.x;
-        sumGyro.d_y += tmpImu.gyro.gyro.y;
-        sumGyro.d_z += tmpImu.gyro.gyro.z;
-
-        delay(1);
-    }
-
-    // calculcate baseline
-    p_biasAccl->d_x = sumAccl.d_x / u32_sample;
-    p_biasAccl->d_y = sumAccl.d_y / u32_sample;
-    p_biasAccl->d_z = sumAccl.d_z / u32_sample;
-    p_biasGyro->d_x = sumGyro.d_x / u32_sample;
-    p_biasGyro->d_y = sumGyro.d_y / u32_sample;
-    p_biasGyro->d_z = sumGyro.d_z / u32_sample;
-
-    // assume z-axis is perpendicular to earth gravity
-    p_biasAccl->d_z -= SENSORS_GRAVITY_STANDARD;
-}
-
-void measure(sImu_t* p_imu)
-{
-    // read sensor
-    mpu.getEvent(&(p_imu->accl), &(p_imu->gyro), &(p_imu->temp));
-
-    // get heatmap
-    p_imu->accl.acceleration.x -= p_imu->biasAccl.d_x;
-    p_imu->accl.acceleration.y -= p_imu->biasAccl.d_y;
-    p_imu->accl.acceleration.z -= p_imu->biasAccl.d_z;
-    p_imu->accl.gyro.x -= p_imu->biasGyro.d_x;
-    p_imu->accl.gyro.y -= p_imu->biasGyro.d_y;
-    p_imu->accl.gyro.z -= p_imu->biasGyro.d_z;
 }
 
 void report(const sensors_vec_t* p_tilt, const sImu_t* p_imu)
 {
     // convert to json
-    const char* p_json = convJSON(p_tilt, p_imu).c_str();
+    const char* p_json = json(p_tilt, p_imu).c_str();
 
     // report to web
     event.send(p_json, "readings", millis());
