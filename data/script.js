@@ -96,7 +96,6 @@ if (!!window.EventSource)
 
     source.addEventListener('readings', function(e) {
         var obj = JSON.parse(e.data);
-        document.getElementById("temp").innerHTML  = obj.temp;
         document.getElementById("gyroX").innerHTML = obj.gyroX;
         document.getElementById("gyroY").innerHTML = obj.gyroY;
         document.getElementById("gyroZ").innerHTML = obj.gyroZ;
@@ -111,6 +110,8 @@ if (!!window.EventSource)
         cube.rotation.z = obj.tiltR;
         cube.rotation.x = obj.tiltP;
         cube.rotation.y = obj.tiltY;
+        // const quaternion = new THREE.Quaternion(obj.quatX, obj.quatY, obj.quatZ, obj.quatW);
+        // cube.applyQuaternion(quaternion);
         renderer.render(scene, camera);
     }, false);
 }
