@@ -1,11 +1,9 @@
 #include "SensorDMP.h"
 
-extern void log(const char *msg);
-extern void err(const char* err);
-
-SensorDMP::SensorDMP(uint8_t pin)
+SensorDMP::SensorDMP(uint8_t pin, SensorLogger& logger)
+    : SensorBase{logger}
+    , mPin{pin}
 {
-    mPin = pin;
 }
 
 SensorDMP::~SensorDMP()
@@ -16,16 +14,16 @@ void SensorDMP::init(uint32_t count)
 {
     if (!mpu.testConnection()) 
     {
-        err("IMU (MPU6050) not found!");
+        throw ("MPU6050 error\n");
     }
 
     mpu.initialize();
     if (0 !=  mpu.dmpInitialize())
     {
-        err("DMP initialization fail!");
+        throw ("DMP error\n");
     }
 
-    log("Calibrating...");
+    mLogger.write("Calibrating...\n");
     calibrate(count);
 
     // turn on the DMP, now that it's ready

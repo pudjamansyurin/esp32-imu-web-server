@@ -1,3 +1,6 @@
+#ifndef SENSOR_FUSION_H_
+#define SENSOR_FUSION_H_
+
 #include "SensorBase.h"
 #include <Adafruit_MPU6050.h>
 
@@ -11,7 +14,7 @@ typedef struct
 
 class SensorFusion: public SensorBase {
 public:
-    SensorFusion(uint32_t deltaTime, float yawThres, float fltrTau);
+    SensorFusion(uint32_t scanTime_ms, float yawThres, float fltrTau, SensorLogger& logger);
     ~SensorFusion();
 
     void init(uint32_t count) override;
@@ -28,11 +31,14 @@ private:
     sensors_vec_t mBiasAccl;
     sensors_vec_t mBiasGyro;
 
-    uint32_t mDeltaTime;
-    uint32_t mLastTime;
+    uint32_t mScanTime_ms;
+    uint32_t mElapsedTime_ms;
+    uint64_t mLastTime_ms;
 
     float mFltrTau;
     float mYawThres;
 
     void calibrate(uint32_t count) override;
 };
+
+#endif /* SENSOR_FUSION_H_ */

@@ -1,9 +1,13 @@
+#ifndef SENSOR_BASE_H_
+#define SENSOR_BASE_H_
+
 #include <Adafruit_Sensor.h>
 #include <Arduino_JSON.h>
+#include "Logger/SensorLogger.h"
 
 class SensorBase {
 public:
-    // SensorBase() {};
+    SensorBase(SensorLogger& logger) : mLogger{logger} {};
     ~SensorBase() {};
 
     virtual void init(uint32_t count) = 0;
@@ -32,6 +36,10 @@ public:
     }
 
 protected:
+    SensorLogger& mLogger;
+
     virtual void calibrate(uint32_t count) = 0;
     
 };
+
+#endif /* SENSOR_BASE_H_ */

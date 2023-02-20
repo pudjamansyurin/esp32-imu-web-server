@@ -1,14 +1,13 @@
 #include "SensorFusion.h"
 
-extern void log(const char *msg);
-extern void err(const char* err);
-
-SensorFusion::SensorFusion(uint32_t deltaTime, float yawThres, float fltrTau)
+SensorFusion::SensorFusion(uint32_t scanTime_ms, float yawThres, float fltrTau, SensorLogger& logger)
+    : SensorBase{logger}
+    , mScanTime_ms{scanTime_ms}
+    , mYawThres{yawThres}
+    , mFltrTau{fltrTau}
+    , mLastTime_ms{0}
+    , mElapsedTime_ms{0}
 {
-    mLastTime = 0;
-    mDeltaTime = deltaTime;
-    mYawThres = yawThres;
-    mFltrTau  = fltrTau;
 }
 
 SensorFusion::~SensorFusion()
@@ -19,10 +18,10 @@ void SensorFusion::init(uint32_t count)
 {
     if (!mpu.begin()) 
     {
-        err("IMU (MPU6050) not found!");
+        throw ("MPU6050 error\n");
     }
 
-    log("Calibrating...");
+    mLogger.write("Calibrating...\n");
     calibrate(count);
 }
 
@@ -78,7 +77,7 @@ void SensorFusion::getTilt(sensors_vec_t* p_tilt)
     tiltAccl.pitch   = -atan2(p_accl->x, sqrt(p_accl->y*p_accl->y + p_accl->z*p_accl->z));
 
     // get tilt from gyroscope
-    dt = mDeltaTime*0.001;
+    dt = (float)mScanTime_ms * 0.001;
     tiltGyro.roll    = p_tilt->roll    + p_gyro->x * dt;
     tiltGyro.pitch   = p_tilt->pitch   + p_gyro->y * dt;
 
@@ -95,19 +94,19 @@ void SensorFusion::getTilt(sensors_vec_t* p_tilt)
 
 void SensorFusion::getEvent(sensors_vec_t* p_gyro, sensors_vec_t* p_accl)
 {
-    while(mDeltaTime > (millis()-mLastTime)) 
-    {
+    do {
         // wait blocking
-    };
-    mLastTime = millis();
+        mElapsedTime_ms = millis()-mLastTime_ms;
+    } while(mScanTime_ms > mElapsedTime_ms);
+    mLastTime_ms = millis();
 
     // read sensor
     mpu.getEvent(&mAccl, &mGyro, &mTemp);
 
     // get heatmap
-    mGyro.gyro.x = mBiasGyro.x;
-    mGyro.gyro.y = mBiasGyro.y;
-    mGyro.gyro.z = mBiasGyro.z;
+    mGyro.gyro.x         -= mBiasGyro.x;
+    mGyro.gyro.y         -= mBiasGyro.y;
+    mGyro.gyro.z         -= mBiasGyro.z;
     mAccl.acceleration.x -= mBiasAccl.x;
     mAccl.acceleration.y -= mBiasAccl.y;
     mAccl.acceleration.z -= mBiasAccl.z;

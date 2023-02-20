@@ -10,14 +10,9 @@
   copies or substantial portions of the Software.
 *********/
 #include "main.h"
-#include <Arduino.h>
-#include <WiFi.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-#include <Adafruit_Sensor.h>
-#include <Adafruit_SSD1306.h>
-#include <Arduino_JSON.h>
-#include "SPIFFS.h"
+#include <Wire.h>
+#include "Logger/SensorLogger.h"
+#include "Server/SensorServer.h"
 
 /* private macros ------------------------------------------------------------*/
 #define LED_PIN         2U
@@ -25,29 +20,21 @@
 #define REPORT_MS       250U
 
 /* private variables ---------------------------------------------------------*/
+SensorLogger logger(Serial, Wire);
+SensorServer server(SVR_PORT, SVR_EVT, logger);
+
 #ifndef USE_DMP
 #include "Sensor/SensorFusion.h"
-SensorFusion sensor(1, 0.03, 0.98);
+SensorBase&& sensor = SensorFusion(1, 0.01, 0.98, logger);
 #else
 #include "Sensor/SensorDMP.h"
-SensorDMP sensor(23);
+SensorBase&& sensor = SensorDMP(23, logger);
 #endif
 
-Adafruit_SSD1306 oled(128, 32, &Wire);
-AsyncWebServer server(SVR_PORT);
-AsyncEventSource event(SVR_EVT);
 sensors_vec_t gyro;
 sensors_vec_t accl;
 sensors_vec_t tilt;
 uint32_t lastReport;
-
-/* private functions delcarations --------------------------------------------*/
-void log(const char *msg);
-void err(const char* err);
-void initOLED();
-void initSPIFFS();
-void initWiFi();
-void updateOLED(const sensors_vec_t* p_tilt);
 
 /* public functions ----------------------------------------------------------*/
 void setup() 
@@ -58,133 +45,41 @@ void setup()
     Wire.begin(); 
     Wire.setClock(400000);
 
-    // debug console init
-    Serial.begin(115200);
-    initOLED();
+    // initalize logger
+    logger.init(115200, "Viewtrix Technology\n");
 
-    // peripheral init
-    sensor.init(CALIB_CNT);
-    initSPIFFS();
-    initWiFi();
+    try
+    {
+        // initalize sensor
+        sensor.init(CALIB_CNT);
 
-    // Handle Web Server Events
-    event.onConnect([](AsyncEventSourceClient *client) {
-        if (client->lastId())
+        // initialize server
+        server.init(SSID_NAME, SSID_PASS);
+        server.start(tilt);
+    }
+    catch(char const *error)
+    {
+        logger.write(error);
+        while(1) 
         {
-            Serial.printf("Client %u reconnected!\n", client->lastId());
-        }
-        client->send("hello!", NULL, millis(), 10000);
-    });
-
-    // Handle Web Server
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(SPIFFS, "/index.html", "text/html");
-    });
-    server.on("/reset", HTTP_GET, [](AsyncWebServerRequest *request) {
-        memset(&tilt, 0x0, sizeof(sensors_vec_t));
-        request->send(200, "text/plain", "OK");
-    });
-    server.on("/reset-y", HTTP_GET, [](AsyncWebServerRequest *request) {
-        tilt.heading = 0;
-        request->send(200, "text/plain", "OK");
-    });
-    server.on("/reset-r", HTTP_GET, [](AsyncWebServerRequest *request) {
-        tilt.roll = 0;
-        request->send(200, "text/plain", "OK");
-    });
-    server.on("/reset-p", HTTP_GET, [](AsyncWebServerRequest *request) {
-        tilt.pitch = 0;
-        request->send(200, "text/plain", "OK");
-    });
-
-    server.serveStatic("/", SPIFFS, "/");
-    server.addHandler(&event);
-    server.begin();
+            digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+            delay(100);
+        };
+    }
+    
 }
 
 void loop() 
 {
-    String json;
-
     sensor.getEvent(&gyro, &accl);
     sensor.getTilt(&tilt);
 
     // report to client
     if (REPORT_MS < (millis() - lastReport))
     {
-        json = sensor.getReport(&gyro, &accl, &tilt);
-        event.send(json.c_str(), "readings", millis());
-        updateOLED(&tilt);
+        server.report(sensor.getReport(&gyro, &accl, &tilt));
+        logger.report(WiFi.localIP().toString(), SVR_PORT, &tilt);
 
         lastReport = millis();
     }
-}
-
-/* private functions definitions ---------------------------------------------*/
-void log(const char *msg)
-{
-    Serial.println(msg);
-    oled.println(msg);
-    oled.display();
-}
-
-void err(const char* err) 
-{
-    log(err);
-
-    while(1) 
-    {
-        digitalWrite(LED_PIN, !digitalRead(LED_PIN));
-        delay(100);
-    };
-}
-
-void initOLED() 
-{
-    if (!oled.begin(SSD1306_SWITCHCAPVCC, 0x3C)) 
-    { 
-        err("OLED (SSD1306) not found!");
-    }
-
-    // configure oled
-    oled.setTextSize(1);
-    oled.setTextColor(WHITE);
-    oled.setRotation(90);
-    oled.clearDisplay();
-    // welcome screen
-    log("Viewtrix Technology");
-}
-
-void initSPIFFS() 
-{
-    if (!SPIFFS.begin()) 
-    {
-        err("Web storage (SPIFFS) err!");
-    }
-}
-
-void initWiFi() 
-{
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(SSID_NAME, SSID_PASS);
-
-    log("Connecting...");
-    while (WL_CONNECTED != WiFi.status()) 
-    {
-        Serial.print(".");
-        delay(1000);
-    }
-    Serial.println("");
-    log("Connected");
-}
-
-void updateOLED(const sensors_vec_t* p_tilt)
-{
-    oled.clearDisplay();
-    oled.setCursor(0, 0);
-    oled.printf("%s:%d\n", WiFi.localIP().toString().c_str(), SVR_PORT);
-    oled.printf("Y: %3.2f deg\n", p_tilt->heading * SENSORS_RADS_TO_DPS);
-    oled.printf("R: %3.2f deg\n", p_tilt->roll    * SENSORS_RADS_TO_DPS);
-    oled.printf("P: %3.2f deg\n", p_tilt->pitch   * SENSORS_RADS_TO_DPS);
-    oled.display();
 }
