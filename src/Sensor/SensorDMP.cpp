@@ -77,3 +77,12 @@ void SensorDMP::getEvent(sensors_vec_t* p_gyro, sensors_vec_t* p_accl)
     p_gyro->z = ((float) v.z / 16.4) * SENSORS_DPS_TO_RADS;
 
 }
+
+void SensorDMP::addReport(JSONVar& data)
+{
+#if 0 // quaternion data is invalid without magnetometer
+    data["quatX"] = String(mQuat.x);
+    data["quatY"] = String(mQuat.y);
+    data["quatZ"] = String(mQuat.z);
+#endif
+}

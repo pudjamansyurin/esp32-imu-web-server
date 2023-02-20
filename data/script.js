@@ -106,12 +106,18 @@ if (!!window.EventSource)
         document.getElementById("tiltR").innerHTML = R2D(obj.tiltR);
         document.getElementById("tiltP").innerHTML = R2D(obj.tiltP);
 
-        // Change cube rotation after receiving the readinds
-        cube.rotation.z = obj.tiltR;
-        cube.rotation.x = obj.tiltP;
-        cube.rotation.y = obj.tiltY;
-        // const quaternion = new THREE.Quaternion(obj.quatX, obj.quatY, obj.quatZ, obj.quatW);
-        // cube.applyQuaternion(quaternion);
+        if (obj.quatX) {
+            // change cube using quaternion
+            const quaternion = new THREE.Quaternion(
+                obj.quatX, obj.quatY, obj.quatZ, obj.quatW
+            );
+            cube.applyQuaternion(quaternion);
+        } else {
+            // change cube using euler angle
+            cube.rotation.z = obj.tiltR;
+            cube.rotation.x = obj.tiltP;
+            cube.rotation.y = obj.tiltY;
+        }
         renderer.render(scene, camera);
     }, false);
 }

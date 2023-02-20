@@ -19,12 +19,6 @@
 #include <Arduino_JSON.h>
 #include "SPIFFS.h"
 
-#ifndef USE_DMP
-#include "Sensor/SensorFusion.h"
-#else
-#include "Sensor/SensorDMP.h"
-#endif
-
 /* private macros ------------------------------------------------------------*/
 #define LED_PIN         2U
 #define CALIB_CNT       10U
@@ -32,8 +26,10 @@
 
 /* private variables ---------------------------------------------------------*/
 #ifndef USE_DMP
+#include "Sensor/SensorFusion.h"
 SensorFusion sensor(1, 0.03, 0.98);
 #else
+#include "Sensor/SensorDMP.h"
 SensorDMP sensor(23);
 #endif
 
@@ -51,20 +47,22 @@ void err(const char* err);
 void initOLED();
 void initSPIFFS();
 void initWiFi();
-void report(const sensors_vec_t* p_gyro, 
-            const sensors_vec_t* p_accl, 
-            const sensors_vec_t* p_tilt);
+void updateOLED(const sensors_vec_t* p_tilt);
 
 /* public functions ----------------------------------------------------------*/
 void setup() 
 {
     pinMode(LED_PIN, OUTPUT);
     
+    // i2c periph init
     Wire.begin(); 
     Wire.setClock(400000);
-    Serial.begin(115200);
 
+    // debug console init
+    Serial.begin(115200);
     initOLED();
+
+    // peripheral init
     sensor.init(CALIB_CNT);
     initSPIFFS();
     initWiFi();
@@ -106,13 +104,18 @@ void setup()
 
 void loop() 
 {
+    String json;
+
     sensor.getEvent(&gyro, &accl);
     sensor.getTilt(&tilt);
 
     // report to client
     if (REPORT_MS < (millis() - lastReport))
     {
-        report(&gyro, &accl, &tilt);
+        json = sensor.getReport(&gyro, &accl, &tilt);
+        event.send(json.c_str(), "readings", millis());
+        updateOLED(&tilt);
+
         lastReport = millis();
     }
 }
@@ -175,29 +178,8 @@ void initWiFi()
     log("Connected");
 }
 
-void report(const sensors_vec_t* p_gyro, 
-            const sensors_vec_t* p_accl, 
-            const sensors_vec_t* p_tilt)
+void updateOLED(const sensors_vec_t* p_tilt)
 {
-    JSONVar data;
-    String json;
-
-    // convert to json
-    data["gyroX"] = String(p_gyro->x);
-    data["gyroY"] = String(p_gyro->y);
-    data["gyroZ"] = String(p_gyro->z);
-    data["acclX"] = String(p_accl->x);
-    data["acclY"] = String(p_accl->y);
-    data["acclZ"] = String(p_accl->z);
-    data["tiltY"] = String(p_tilt->heading);
-    data["tiltR"] = String(p_tilt->roll);
-    data["tiltP"] = String(p_tilt->pitch);
-    json = JSON.stringify(data);
-
-    // report to web
-    event.send(json.c_str(), "readings", millis());
-
-    // report to oled
     oled.clearDisplay();
     oled.setCursor(0, 0);
     oled.printf("%s:%d\n", WiFi.localIP().toString().c_str(), SVR_PORT);
