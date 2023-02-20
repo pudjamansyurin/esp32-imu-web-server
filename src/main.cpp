@@ -23,7 +23,7 @@
 #define RESULTANT(X,Y)  (sqrt((X)*(X) + (Y)*(Y)))
 
 #define LED_PIN         2U
-#define CALIB_CNT       500U
+#define CALIB_CNT       10U
 #define MEASURE_MS      1U
 #define REPORT_MS       250U
 #define TAU             0.98f
@@ -83,15 +83,15 @@ void setup()
         memset(&tilt, 0x0, sizeof(sensors_vec_t));
         request->send(200, "text/plain", "OK");
     });
-    server.on("/reset-yaw", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/reset-y", HTTP_GET, [](AsyncWebServerRequest *request) {
         tilt.heading = 0;
         request->send(200, "text/plain", "OK");
     });
-    server.on("/reset-roll", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/reset-r", HTTP_GET, [](AsyncWebServerRequest *request) {
         tilt.roll = 0;
         request->send(200, "text/plain", "OK");
     });
-    server.on("/reset-pitch", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/reset-p", HTTP_GET, [](AsyncWebServerRequest *request) {
         tilt.pitch = 0;
         request->send(200, "text/plain", "OK");
     });
@@ -109,14 +109,13 @@ void loop()
     u32_ms = millis() - u64_lastMeasure;
     if (MEASURE_MS < u32_ms)
     {
-        u64_lastMeasure = millis();
         measure(&imu);
         calcTilt(&tilt, &imu, (u32_ms * 0.001));
+        u64_lastMeasure = millis();
     }
 
     // report to client
-    u32_ms = millis() - u64_lastReport;
-    if (REPORT_MS < u32_ms)
+    if (REPORT_MS < (millis() - u64_lastReport))
     {
         u64_lastReport = millis();
         report(&tilt, &imu);
@@ -233,16 +232,16 @@ String convJSON(const sensors_vec_t* p_tilt, const sImu_t* p_imu)
     p_accl = &(p_imu->accl.acceleration);
     p_gyro = &(p_imu->gyro.gyro);
 
-    data["temp"]      = String(p_imu->temp.temperature);
-    data["gyroX"]     = String(p_gyro->x);
-    data["gyroY"]     = String(p_gyro->y);
-    data["gyroZ"]     = String(p_gyro->z);
-    data["acclX"]     = String(p_accl->x);
-    data["acclY"]     = String(p_accl->y);
-    data["acclZ"]     = String(p_accl->z);
-    data["tiltYaw"]   = String(p_tilt->heading);
-    data["tiltRoll"]  = String(p_tilt->roll);
-    data["tiltPitch"] = String(p_tilt->pitch);
+    data["temp"]  = String(p_imu->temp.temperature);
+    data["gyroX"] = String(p_gyro->x);
+    data["gyroY"] = String(p_gyro->y);
+    data["gyroZ"] = String(p_gyro->z);
+    data["acclX"] = String(p_accl->x);
+    data["acclY"] = String(p_accl->y);
+    data["acclZ"] = String(p_accl->z);
+    data["tiltY"] = String(p_tilt->heading);
+    data["tiltR"] = String(p_tilt->roll);
+    data["tiltP"] = String(p_tilt->pitch);
 
     return JSON.stringify(data);
 }

@@ -12,7 +12,7 @@
 let scene, camera, cube;
 
 /* functions prototypes ------------------------------------------------------*/
-function rad2deg (rad, precision = 2) 
+function R2D (rad, precision = 2) 
 {
     return (parseFloat(rad) * (180 / Math.PI)).toFixed(precision);
 };
@@ -37,28 +37,9 @@ function init3D()
     elem3d = document.getElementById("3Dcube");
     const { w, h } = parentSize(elem3d);
 
-    // create cube
-    const material = new THREE.MeshFaceMaterial([
-        new THREE.MeshBasicMaterial({color:0x03045e}),
-        new THREE.MeshBasicMaterial({color:0x023e8a}),
-        new THREE.MeshBasicMaterial({color:0x0077b6}),
-        new THREE.MeshBasicMaterial({color:0x03045e}),
-        new THREE.MeshBasicMaterial({color:0x023e8a}),
-        new THREE.MeshBasicMaterial({color:0x0077b6}),
-    ]);
-    const geometry = new THREE.BoxGeometry(6, 1, 4);
-    cube = new THREE.Mesh(geometry, material);
-
-    // create axis 
-    const axesHelper = new THREE.AxesHelper( 5 );
-
     // setup scene
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff);
-    
-    // combine object into scene
-    scene.add(axesHelper);
-    scene.add(cube);
 
     // setup camera
     camera = new THREE.PerspectiveCamera(75, w / h, 0.1, 1000);
@@ -67,9 +48,20 @@ function init3D()
     // setup renderer
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(w, h);
-    renderer.render(scene, camera);
-
     elem3d.appendChild(renderer.domElement);
+
+    // create cube
+    const material = new THREE.MeshNormalMaterial({ wireframe: false }); 
+    const geometry = new THREE.BoxGeometry(6, 1, 4);
+    cube = new THREE.Mesh(geometry, material);
+    scene.add(cube);
+
+    // create axis 
+    const axesHelper = new THREE.AxesHelper( 5 );
+    scene.add(axesHelper);
+
+    // combine object into scene
+    renderer.render(scene, camera);
 }
 
 // Resize the 3D object when the browser window changes size
@@ -111,14 +103,14 @@ if (!!window.EventSource)
         document.getElementById("acclX").innerHTML = obj.acclX;
         document.getElementById("acclY").innerHTML = obj.acclY;
         document.getElementById("acclZ").innerHTML = obj.acclZ;
-        document.getElementById("tiltYaw").innerHTML   = rad2deg(obj.tiltYaw);
-        document.getElementById("tiltRoll").innerHTML  = rad2deg(obj.tiltRoll);
-        document.getElementById("tiltPitch").innerHTML = rad2deg(obj.tiltPitch);
+        document.getElementById("tiltY").innerHTML = R2D(obj.tiltY);
+        document.getElementById("tiltR").innerHTML = R2D(obj.tiltR);
+        document.getElementById("tiltP").innerHTML = R2D(obj.tiltP);
 
         // Change cube rotation after receiving the readinds
-        cube.rotation.z = obj.tiltRoll;
-        cube.rotation.x = obj.tiltPitch;
-        cube.rotation.y = obj.tiltYaw;
+        cube.rotation.z = obj.tiltR;
+        cube.rotation.x = obj.tiltP;
+        cube.rotation.y = obj.tiltY;
         renderer.render(scene, camera);
     }, false);
 }
