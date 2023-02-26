@@ -23,7 +23,7 @@ void SensorDMP::init(uint32_t count)
         throw ("DMP error\n");
     }
 
-    mLogger.write("Calibrating...\n");
+    mLogger.write("Calibrating MPU...\n");
     calibrate(count);
 
     // turn on the DMP, now that it's ready
@@ -34,8 +34,17 @@ void SensorDMP::init(uint32_t count)
     // attachInterrupt(mPin, NULL, RISING);
 }
 
+void SensorDMP::wait()
+{
+    while(!mpu.dmpGetCurrentFIFOPacket(mFifoBuf))
+    {
+        // wait blocking
+    }
+}
+
 void SensorDMP::calibrate(uint32_t count)
 {
+    count /= 100;
     mpu.CalibrateAccel(count);
     mpu.CalibrateGyro(count);
 }
@@ -56,11 +65,6 @@ void SensorDMP::getTilt(sensors_vec_t* p_tilt)
 void SensorDMP::getEvent(sensors_vec_t* p_gyro, sensors_vec_t* p_accl)
 {
     VectorInt16 v;
-
-    while(!mpu.dmpGetCurrentFIFOPacket(mFifoBuf))
-    {
-        // wait blocking
-    }
 
     mpu.dmpGetQuaternion(&mQuat, mFifoBuf);
 

@@ -10,6 +10,7 @@ public:
     ~SensorDMP();
 
     void init(uint32_t count) override;
+    void wait() override;
     void getTilt(sensors_vec_t* p_tilt) override;
     void getEvent(sensors_vec_t* p_gyro, sensors_vec_t* p_accl) override;
     void addReport(JSONVar& data) override;

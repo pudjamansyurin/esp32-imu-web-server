@@ -13,10 +13,13 @@
 #include <Wire.h>
 #include "Logger/SensorLogger.h"
 #include "Server/SensorServer.h"
+#include "Sensor/SensorMagnet.h"
 
 /* private macros ------------------------------------------------------------*/
+#define MPU_PIN         23U
 #define LED_PIN         2U
-#define CALIB_CNT       10U
+
+#define CALIB_CNT       200U
 #define REPORT_MS       250U
 
 /* private variables ---------------------------------------------------------*/
@@ -24,13 +27,17 @@ SensorLogger logger(Serial, Wire);
 SensorServer server(SVR_PORT, SVR_EVT, logger);
 
 #ifndef USE_DMP
-#include "Sensor/SensorFusion.h"
-SensorBase&& sensor = SensorFusion(1, 0.01, 0.98, logger);
+#include "Sensor/SensorFUSE.h"
+SensorBase&& mpu = SensorFUSE(200, 0.98, logger);
 #else
 #include "Sensor/SensorDMP.h"
-SensorBase&& sensor = SensorDMP(23, logger);
+SensorBase&& mpu = SensorDMP(MPU_PIN, logger);
 #endif
 
+// For Sukun Malang declination angle is +0'46E 
+SensorMagnet hmc(0.0, 46.0, logger);
+
+sensors_vec_t mag;
 sensors_vec_t gyro;
 sensors_vec_t accl;
 sensors_vec_t tilt;
@@ -50,8 +57,11 @@ void setup()
 
     try
     {
-        // initalize sensor
-        sensor.init(CALIB_CNT);
+        // initalize imu sensor
+        mpu.init(CALIB_CNT);
+
+        /* initalize magnetic sensor */
+        hmc.init(CALIB_CNT);
 
         // initialize server
         server.init(SSID_NAME, SSID_PASS);
@@ -66,18 +76,28 @@ void setup()
             delay(100);
         };
     }
-    
 }
 
 void loop() 
 {
-    sensor.getEvent(&gyro, &accl);
-    sensor.getTilt(&tilt);
+    sensors_event_t event; 
+
+    // wait until scan time
+    mpu.wait();
+
+    // get sensor events
+    hmc.getEvent(&mag);
+    mpu.getEvent(&gyro, &accl);
+
+    // get tilt
+    hmc.getTilt(&tilt);
+    mpu.getTilt(&tilt);
 
     // report to client
     if (REPORT_MS < (millis() - lastReport))
     {
-        server.report(sensor.getReport(&gyro, &accl, &tilt));
+        
+        server.report(mpu.getReport(&gyro, &accl, &tilt));
         logger.report(WiFi.localIP().toString(), SVR_PORT, &tilt);
 
         lastReport = millis();

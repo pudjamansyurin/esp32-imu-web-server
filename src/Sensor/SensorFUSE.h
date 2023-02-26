@@ -1,23 +1,16 @@
-#ifndef SENSOR_FUSION_H_
-#define SENSOR_FUSION_H_
+#ifndef SENSOR_FUSE_H_
+#define SENSOR_FUSE_H_
 
 #include "SensorBase.h"
 #include <Adafruit_MPU6050.h>
 
-typedef struct
-{
-    double x;
-    double y;
-    double z;
-} VectorDouble_t;
-
-
-class SensorFusion: public SensorBase {
+class SensorFUSE: public SensorBase {
 public:
-    SensorFusion(uint32_t scanTime_ms, float yawThres, float fltrTau, SensorLogger& logger);
-    ~SensorFusion();
+    SensorFUSE(uint32_t freq, float fltrTau, SensorLogger& logger);
+    ~SensorFUSE();
 
     void init(uint32_t count) override;
+    void wait() override;
     void getTilt(sensors_vec_t* p_tilt) override;
     void getEvent(sensors_vec_t* p_gyro, sensors_vec_t* p_accl) override;
 
@@ -31,14 +24,13 @@ private:
     sensors_vec_t mBiasAccl;
     sensors_vec_t mBiasGyro;
 
-    uint32_t mScanTime_ms;
-    uint32_t mElapsedTime_ms;
+    uint32_t mFreq;
     uint64_t mLastTime_ms;
 
     float mFltrTau;
-    float mYawThres;
 
     void calibrate(uint32_t count) override;
+    float duration();
 };
 
-#endif /* SENSOR_FUSION_H_ */
+#endif /* SENSOR_FUSE_H_ */

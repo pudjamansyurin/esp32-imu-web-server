@@ -11,6 +11,7 @@ public:
     ~SensorBase() {};
 
     virtual void init(uint32_t count) = 0;
+    virtual void wait() = 0;
     virtual void getTilt(sensors_vec_t* p_tilt) = 0;
     virtual void getEvent(sensors_vec_t* p_gyro, sensors_vec_t* p_accl) = 0;
     virtual void addReport(JSONVar& data) {};

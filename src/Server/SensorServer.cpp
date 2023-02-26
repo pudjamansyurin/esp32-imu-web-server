@@ -24,7 +24,7 @@ void SensorServer::init(const char* ssid, const char *pass)
     WiFi.begin(ssid, pass);
 
     // wait until connected
-    mLogger.write("Connecting...");
+    mLogger.write("Connecting WiFi...");
     while (WL_CONNECTED != WiFi.status()) 
     {
         mLogger.write(".");
