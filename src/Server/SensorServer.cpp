@@ -35,27 +35,11 @@ void SensorServer::init(const char* ssid, const char *pass)
     mLogger.write("Connected.\n");
 }
 
-void SensorServer::start(sensors_vec_t& tilt)
+void SensorServer::start()
 {
     // Handle Web Server
     mServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(SPIFFS, "/index.html", "text/html");
-    });
-    mServer.on("/reset", HTTP_GET, [&](AsyncWebServerRequest *request) {
-        memset(&tilt, 0x0, sizeof(sensors_vec_t));
-        request->send(200, "text/plain", "OK");
-    });
-    mServer.on("/reset-y", HTTP_GET, [&](AsyncWebServerRequest *request) {
-        tilt.heading = 0;
-        request->send(200, "text/plain", "OK");
-    });
-    mServer.on("/reset-r", HTTP_GET, [&](AsyncWebServerRequest *request) {
-        tilt.roll = 0;
-        request->send(200, "text/plain", "OK");
-    });
-    mServer.on("/reset-p", HTTP_GET, [&](AsyncWebServerRequest *request) {
-        tilt.pitch = 0;
-        request->send(200, "text/plain", "OK");
     });
 
     // Handle Web Server Events

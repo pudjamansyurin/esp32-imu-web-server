@@ -49,7 +49,7 @@ void SensorDMP::calibrate(uint32_t count)
     mpu.CalibrateGyro(count);
 }
 
-void SensorDMP::getTilt(sensors_vec_t* p_tilt) 
+void SensorDMP::update(const sMARG_t* p_marg) 
 {
     VectorFloat gravity;
     float ypr[3];
@@ -57,12 +57,12 @@ void SensorDMP::getTilt(sensors_vec_t* p_tilt)
     mpu.dmpGetGravity(&gravity, &mQuat);
     mpu.dmpGetYawPitchRoll(ypr, &mQuat, &gravity);
 
-    p_tilt->heading = ypr[0];
-    p_tilt->pitch   = -ypr[1];
-    p_tilt->roll    = ypr[2];
+    mTiltRads.heading =  ypr[0];
+    mTiltRads.pitch   = -ypr[1];
+    mTiltRads.roll    =  ypr[2];
 }
 
-void SensorDMP::getEvent(sensors_vec_t* p_gyro, sensors_vec_t* p_accl)
+void SensorDMP::getEvent(sMARG_t* p_marg)
 {
     VectorInt16 v;
 
@@ -70,21 +70,12 @@ void SensorDMP::getEvent(sensors_vec_t* p_gyro, sensors_vec_t* p_accl)
 
     // copy data
     mpu.dmpGetAccel(&v, mFifoBuf);    // MPU6050_RANGE_2_G
-    p_accl->x = ((float) v.x / 16384.0) * SENSORS_GRAVITY_STANDARD;
-    p_accl->y = ((float) v.y / 16384.0) * SENSORS_GRAVITY_STANDARD;
-    p_accl->z = ((float) v.z / 16384.0) * SENSORS_GRAVITY_STANDARD;
+    p_marg->accl.x = ((float) v.x / 16384.0) * SENSORS_GRAVITY_STANDARD;
+    p_marg->accl.y = ((float) v.y / 16384.0) * SENSORS_GRAVITY_STANDARD;
+    p_marg->accl.z = ((float) v.z / 16384.0) * SENSORS_GRAVITY_STANDARD;
     mpu.dmpGetGyro(&v, mFifoBuf);     // MPU6050_RANGE_2000_DEG
-    p_gyro->x = ((float) v.x / 16.4) * SENSORS_DPS_TO_RADS;
-    p_gyro->y = ((float) v.y / 16.4) * SENSORS_DPS_TO_RADS;
-    p_gyro->z = ((float) v.z / 16.4) * SENSORS_DPS_TO_RADS;
+    p_marg->gyro.x = ((float) v.x / 16.4) * SENSORS_DPS_TO_RADS;
+    p_marg->gyro.y = ((float) v.y / 16.4) * SENSORS_DPS_TO_RADS;
+    p_marg->gyro.z = ((float) v.z / 16.4) * SENSORS_DPS_TO_RADS;
 
-}
-
-void SensorDMP::addReport(JSONVar& data)
-{
-#if 0 // quaternion data is invalid without magnetometer
-    data["quatX"] = String(mQuat.x);
-    data["quatY"] = String(mQuat.y);
-    data["quatZ"] = String(mQuat.z);
-#endif
 }

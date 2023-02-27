@@ -8,22 +8,12 @@
   The above copyright notice and this permission notice shall be included in 
   all copies or substantial portions of the Software.
 */
+const DPS_TO_RADS = (0.017453293);
+const RADS_TO_DPS = (57.29577793);
 
 let scene, camera, cube;
 
 /* functions prototypes ------------------------------------------------------*/
-function R2D (rad, precision = 2) 
-{
-    return (parseFloat(rad) * (180 / Math.PI)).toFixed(precision);
-};
-
-function resetPosition(elem)
-{
-    var xhr = new XMLHttpRequest();
-    xhr.open("GET", "/"+elem.id, true);
-    xhr.send();
-  }
-
 function parentSize(elem) 
 {
     return {
@@ -102,9 +92,16 @@ if (!!window.EventSource)
         document.getElementById("acclX").innerHTML = obj.acclX;
         document.getElementById("acclY").innerHTML = obj.acclY;
         document.getElementById("acclZ").innerHTML = obj.acclZ;
-        document.getElementById("tiltY").innerHTML = R2D(obj.tiltY);
-        document.getElementById("tiltR").innerHTML = R2D(obj.tiltR);
-        document.getElementById("tiltP").innerHTML = R2D(obj.tiltP);
+        document.getElementById("magnX").innerHTML = obj.magnX;
+        document.getElementById("magnY").innerHTML = obj.magnY;
+        document.getElementById("magnZ").innerHTML = obj.magnZ;
+        
+        if (obj.tiltY)
+        {
+            document.getElementById("tiltY").innerHTML = obj.tiltY;
+            document.getElementById("tiltR").innerHTML = obj.tiltR;
+            document.getElementById("tiltP").innerHTML = obj.tiltP;
+        }
 
         if (obj.quatX) {
             // change cube using quaternion
@@ -114,9 +111,9 @@ if (!!window.EventSource)
             cube.applyQuaternion(quaternion);
         } else {
             // change cube using euler angle
-            cube.rotation.z = obj.tiltR;
-            cube.rotation.x = obj.tiltP;
-            cube.rotation.y = obj.tiltY;
+            cube.rotation.z = obj.tiltR * DPS_TO_RADS;
+            cube.rotation.x = obj.tiltP * DPS_TO_RADS;
+            cube.rotation.y = obj.tiltY * DPS_TO_RADS;
         }
         renderer.render(scene, camera);
     }, false);

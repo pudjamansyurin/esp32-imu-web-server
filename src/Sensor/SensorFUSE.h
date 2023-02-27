@@ -11,26 +11,21 @@ public:
 
     void init(uint32_t count) override;
     void wait() override;
-    void getTilt(sensors_vec_t* p_tilt) override;
-    void getEvent(sensors_vec_t* p_gyro, sensors_vec_t* p_accl) override;
+    void getEvent(sMARG_t* p_marg) override;
+    void update(const sMARG_t* p_marg) override;
 
 private:
     Adafruit_MPU6050 mpu;
-
-    sensors_event_t mAccl;
-    sensors_event_t mGyro;
-    sensors_event_t mTemp;
 
     sensors_vec_t mBiasAccl;
     sensors_vec_t mBiasGyro;
 
     uint32_t mFreq;
-    uint64_t mLastTime_ms;
+    uint32_t mLastTime_ms;
 
     float mFltrTau;
 
     void calibrate(uint32_t count) override;
-    float duration();
 };
 
 #endif /* SENSOR_FUSE_H_ */

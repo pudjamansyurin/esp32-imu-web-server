@@ -14,7 +14,7 @@ public:
     ~SensorServer();
 
     void init(const char* ssid, const char *pass);
-    void start(sensors_vec_t& tilt);
+    void start();
     void report(String&& json);
 
 private:

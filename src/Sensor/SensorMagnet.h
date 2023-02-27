@@ -1,9 +1,8 @@
 #ifndef SENSOR_MAGNET_H_
 #define SENSOR_MAGNET_H_
 
-#include <Adafruit_Sensor.h>
+#include "SensorBase.h"
 #include <Adafruit_HMC5883_U.h>
-#include "Logger/SensorLogger.h"
 
 typedef struct
 {
@@ -11,20 +10,19 @@ typedef struct
     float max;
 } VectorRange_t;
 
-class SensorMagnet {
+class SensorMagnet : public SensorBase {
 public:
     SensorMagnet(float declDeg, float declMin, SensorLogger& logger);
     ~SensorMagnet();
 
-    void init(uint32_t count);
-    void getTilt(sensors_vec_t* p_tilt);
-    void getEvent(sensors_vec_t* p_mag);
+    void init(uint32_t count) override;
+    void wait() override {};
+    void getEvent(sMARG_t* p_marg) override;
+    void update(const sMARG_t* p_marg) override;
 
 private:
     Adafruit_HMC5883_Unified hmc;
-    SensorLogger& mLogger;
 
-    sensors_event_t mMag;
     sensors_vec_t mBias;
     
     float mDeclAngle;

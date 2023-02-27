@@ -11,9 +11,8 @@ public:
 
     void init(uint32_t count) override;
     void wait() override;
-    void getTilt(sensors_vec_t* p_tilt) override;
-    void getEvent(sensors_vec_t* p_gyro, sensors_vec_t* p_accl) override;
-    void addReport(JSONVar& data) override;
+    void getEvent(sMARG_t* p_marg) override;
+    void update(const sMARG_t* p_marg) override;
 
 private:
     MPU6050 mpu;

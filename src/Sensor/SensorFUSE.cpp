@@ -4,8 +4,8 @@ SensorFUSE::SensorFUSE(uint32_t freq, float fltrTau, SensorLogger& logger)
     : SensorBase{logger}
     , mFreq{freq}
     , mFltrTau{fltrTau}
-    , mLastTime_ms{0}
 {
+    memset(&mTiltRads, 0x0, sizeof(sensors_vec_t));
 }
 
 SensorFUSE::~SensorFUSE()
@@ -21,14 +21,16 @@ void SensorFUSE::init(uint32_t count)
 
     mLogger.write("Calibrating MPU...\n");
     calibrate(count);
+
+    mLastTime_ms = millis();
 }
 
 void SensorFUSE::wait()
 {
     uint32_t ms;
 
-    ms = duration() * 1000;
-    while(ms > (millis()-mLastTime_ms)) 
+    ms = 1000.0 / (float)mFreq;
+    while(ms >= (millis()-mLastTime_ms)) 
     {
         // wait blocking
     } ;
@@ -37,6 +39,9 @@ void SensorFUSE::wait()
 
 void SensorFUSE::calibrate(uint32_t count)
 {
+    sensors_event_t accl;
+    sensors_event_t gyro;
+    sensors_event_t temp;
     double sumAccl[3];
     double sumGyro[3];
 
@@ -47,14 +52,14 @@ void SensorFUSE::calibrate(uint32_t count)
     // get a lot of sample
     for(uint32_t u32_i = 0; u32_i < count; u32_i++) 
     {
-        mpu.getEvent(&mAccl, &mGyro, &mTemp);
+        mpu.getEvent(&accl, &gyro, &temp);
 
-        sumGyro[0] += mGyro.gyro.x;
-        sumGyro[1] += mGyro.gyro.y;
-        sumGyro[2] += mGyro.gyro.z;
-        sumAccl[0] += mAccl.acceleration.x;
-        sumAccl[1] += mAccl.acceleration.y;
-        sumAccl[2] += mAccl.acceleration.z;
+        sumGyro[0] += gyro.gyro.x;
+        sumGyro[1] += gyro.gyro.y;
+        sumGyro[2] += gyro.gyro.z;
+        sumAccl[0] += accl.acceleration.x;
+        sumAccl[1] += accl.acceleration.y;
+        sumAccl[2] += accl.acceleration.z;
 
         delay(1);
     }
@@ -71,7 +76,7 @@ void SensorFUSE::calibrate(uint32_t count)
     mBiasAccl.z -= SENSORS_GRAVITY_STANDARD;
 }
 
-void SensorFUSE::getTilt(sensors_vec_t* p_tilt) 
+void SensorFUSE::update(const sMARG_t* p_marg) 
 {
     const sensors_vec_t* p_accl;
     const sensors_vec_t* p_gyro;
@@ -79,43 +84,48 @@ void SensorFUSE::getTilt(sensors_vec_t* p_tilt)
     sensors_vec_t tiltGyro;
     float dt;
 
-    p_accl = &(mAccl.acceleration);
-    p_gyro = &(mGyro.gyro);
-
-    dt = duration();
-    
-    // get tilt from accelerometer
-    tiltAccl.roll    =  atan2(p_accl->y, sqrt(p_accl->x*p_accl->x + p_accl->z*p_accl->z));
-    tiltAccl.pitch   = -atan2(p_accl->x, sqrt(p_accl->y*p_accl->y + p_accl->z*p_accl->z));
+    p_accl = &(p_marg->accl);
+    p_gyro = &(p_marg->gyro);
 
     // get tilt from gyroscope
-    tiltGyro.roll    = p_tilt->roll    + p_gyro->x * dt;
-    tiltGyro.pitch   = p_tilt->pitch   + p_gyro->y * dt;
+    dt = 1.0 / (float)mFreq;
+    tiltGyro.roll    = mTiltRads.roll    + p_gyro->x * dt;
+    tiltGyro.pitch   = mTiltRads.pitch   + p_gyro->y * dt;
+
+    // get tilt from accelerometer
+    tiltAccl.roll    =  atan2(p_accl->y, 
+                              sqrt(p_accl->x*p_accl->x + p_accl->z*p_accl->z));
+    tiltAccl.pitch   = -atan2(p_accl->x, 
+                              sqrt(p_accl->y*p_accl->y + p_accl->z*p_accl->z));
 
     // sensor fusion using complementary filter
-    p_tilt->roll     = (mFltrTau)*(tiltGyro.roll)  + (1-mFltrTau)*(tiltAccl.roll);
-    p_tilt->pitch    = (mFltrTau)*(tiltGyro.pitch) + (1-mFltrTau)*(tiltAccl.pitch);
+    mTiltRads.roll   = (mFltrTau)   * (tiltGyro.roll)  + 
+                       (1-mFltrTau) * (tiltAccl.roll);
+    mTiltRads.pitch  = (mFltrTau)   * (tiltGyro.pitch) + 
+                       (1-mFltrTau) * (tiltAccl.pitch);
+    
+    // undefined for yaw
+    mTiltRads.heading = 0;
 }
 
-void SensorFUSE::getEvent(sensors_vec_t* p_gyro, sensors_vec_t* p_accl)
+void SensorFUSE::getEvent(sMARG_t* p_marg)
 {
+    sensors_event_t accl;
+    sensors_event_t gyro;
+    sensors_event_t temp;
+
     // read sensor
-    mpu.getEvent(&mAccl, &mGyro, &mTemp);
+    mpu.getEvent(&accl, &gyro, &temp);
 
     // get heatmap
-    mGyro.gyro.x         -= mBiasGyro.x;
-    mGyro.gyro.y         -= mBiasGyro.y;
-    mGyro.gyro.z         -= mBiasGyro.z;
-    mAccl.acceleration.x -= mBiasAccl.x;
-    mAccl.acceleration.y -= mBiasAccl.y;
-    mAccl.acceleration.z -= mBiasAccl.z;
+    gyro.gyro.x         -= mBiasGyro.x;
+    gyro.gyro.y         -= mBiasGyro.y;
+    gyro.gyro.z         -= mBiasGyro.z;
+    accl.acceleration.x -= mBiasAccl.x;
+    accl.acceleration.y -= mBiasAccl.y;
+    accl.acceleration.z -= mBiasAccl.z;
 
     // copy data
-    memcpy(p_gyro, &(mGyro.gyro), sizeof(sensors_vec_t));
-    memcpy(p_accl, &(mAccl.acceleration), sizeof(sensors_vec_t));
-}
-
-float SensorFUSE::duration()
-{
-    return 1.0 / (float)mFreq;
+    memcpy(&(p_marg->gyro), &(gyro.gyro), sizeof(sensors_vec_t));
+    memcpy(&(p_marg->accl), &(accl.acceleration), sizeof(sensors_vec_t));
 }

@@ -16,11 +16,12 @@
 #include "Sensor/SensorMagnet.h"
 
 /* private macros ------------------------------------------------------------*/
-#define MPU_PIN         23U
-#define LED_PIN         2U
+#define LED_PIN         2
+#define MPU_PIN         23
 
-#define CALIB_CNT       200U
-#define REPORT_MS       250U
+#define CALIB_CNT       200
+#define REPORT_MS       250
+#define SAMPLE_HZ       100
 
 /* private variables ---------------------------------------------------------*/
 SensorLogger logger(Serial, Wire);
@@ -28,7 +29,7 @@ SensorServer server(SVR_PORT, SVR_EVT, logger);
 
 #ifndef USE_DMP
 #include "Sensor/SensorFUSE.h"
-SensorBase&& mpu = SensorFUSE(200, 0.98, logger);
+SensorBase&& mpu = SensorFUSE(SAMPLE_HZ, 0.98, logger);
 #else
 #include "Sensor/SensorDMP.h"
 SensorBase&& mpu = SensorDMP(MPU_PIN, logger);
@@ -37,10 +38,17 @@ SensorBase&& mpu = SensorDMP(MPU_PIN, logger);
 // For Sukun Malang declination angle is +0'46E 
 SensorMagnet hmc(0.0, 46.0, logger);
 
-sensors_vec_t mag;
-sensors_vec_t gyro;
-sensors_vec_t accl;
+#ifdef USE_AHRS
+#include <Adafruit_AHRS.h>
+// pick your filter! slower == better quality output
+// Adafruit_NXPSensorFusion filter; // slowest
+// Adafruit_Madgwick filter;  // faster than NXP
+Adafruit_Mahony filter;  // fastest/smallest
+#endif
+
+sMARG_t marg;
 sensors_vec_t tilt;
+sQuaternion_t quat;
 uint32_t lastReport;
 
 /* public functions ----------------------------------------------------------*/
@@ -65,7 +73,7 @@ void setup()
 
         // initialize server
         server.init(SSID_NAME, SSID_PASS);
-        server.start(tilt);
+        server.start();
     }
     catch(char const *error)
     {
@@ -76,30 +84,55 @@ void setup()
             delay(100);
         };
     }
+
+#ifdef USE_AHRS
+    filter.begin(SAMPLE_HZ);
+#endif
 }
 
 void loop() 
 {
-    sensors_event_t event; 
-
-    // wait until scan time
+    // wait until sample time
     mpu.wait();
 
     // get sensor events
-    hmc.getEvent(&mag);
-    mpu.getEvent(&gyro, &accl);
+    hmc.getEvent(&marg);
+    mpu.getEvent(&marg);
 
-    // get tilt
-    hmc.getTilt(&tilt);
-    mpu.getTilt(&tilt);
+    // update current position
+#ifndef USE_AHRS
+    hmc.update(&marg);
+    mpu.update(&marg);
+#else
+    // filter want gyro in dps
+    marg.gyro.x *= SENSORS_RADS_TO_DPS;
+    marg.gyro.y *= SENSORS_RADS_TO_DPS;
+    marg.gyro.z *= SENSORS_RADS_TO_DPS;
 
-    // report to client
+    // update filter
+    filter.update(marg.gyro.x, marg.gyro.y, marg.gyro.z, 
+                  marg.accl.x, marg.accl.y, marg.accl.z, 
+                  marg.magn.x, marg.magn.y, marg.magn.z);
+#endif
+
+    // reporting
     if (REPORT_MS < (millis() - lastReport))
     {
-        
-        server.report(mpu.getReport(&gyro, &accl, &tilt));
-        logger.report(WiFi.localIP().toString(), SVR_PORT, &tilt);
-
         lastReport = millis();
+        
+        // get tilt information
+#ifndef USE_AHRS
+        tilt.roll    = mpu.getRoll();
+        tilt.pitch   = mpu.getPitch();
+        tilt.heading = hmc.getYaw();
+#else
+        tilt.roll    = filter.getRoll();
+        tilt.pitch   = filter.getPitch();
+        tilt.heading = filter.getYaw();
+#endif
+
+        // report 
+        logger.report(WiFi.localIP().toString(), SVR_PORT, &tilt);
+        server.report(mpu.getReport(&marg, &tilt));
     }
 }

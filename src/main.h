@@ -2,6 +2,7 @@
 #define MAIN_H_
 
 #include <Arduino.h>
+#include "env.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -9,6 +10,10 @@ extern "C" {
 
 /* exported macros  ----------------------------------------------------------*/
 // #define USE_DMP
+// #define USE_AHRS
+
+/* exported typedef ----------------------------------------------------------*/
+
 
 #ifdef __cplusplus
 }
